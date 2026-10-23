@@ -162,15 +162,16 @@ class PlasmaSimulationApp(QMainWindow):
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(8)
 
+        # CENTER: Telemetry Graphics Grid (created before controls are wired so
+        # that control signals fired during initialize_values can safely update it)
+        pg.setConfigOptions(antialias=True)
+        self.telemetry = TelemetryGraphics()
+
         # TOP: Interactive Control Toolbar
         self.controls = ControlToolbar()
         self.controls.connect_signals(self)
         self.controls.initialize_values(self.engine, self.preset_name)
         main_layout.addWidget(self.controls)
-
-        # CENTER: Telemetry Graphics Grid
-        pg.setConfigOptions(antialias=True)
-        self.telemetry = TelemetryGraphics()
         main_layout.addWidget(self.telemetry, stretch=1)
 
         # Re-center boundary for initial preset
@@ -278,7 +279,7 @@ class PlasmaSimulationApp(QMainWindow):
 
         # 4. Update Maxwell-Boltzmann Speed Distribution
         speeds = self.engine.get_speed_distribution()
-        if bool(speeds) and self.frame_count % 3 == 0:
+        if speeds.size and self.frame_count % 3 == 0:
             hist, bin_edges = np.histogram(speeds, bins=25, density=True)
             self.telemetry.hist_curve.setData(bin_edges, hist)
 

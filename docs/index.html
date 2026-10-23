@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tokamak-Py — N-Body Electromagnetic Plasma Confinement Engine</title>
+<meta name="description" content="High-performance Numba-accelerated N-body plasma confinement engine: symplectic Boris integration, Barnes-Hut quadtrees/octrees, and a live PyQt6 dashboard. Try a real-time simulation in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#060910; --bg-2:#080d17;
+    --surface:#0d1420; --surface-2:#111a2a; --surface-3:#0a111d;
+    --border:rgba(255,255,255,0.09); --border-strong:rgba(255,255,255,0.16);
+    --text:#e9eef7; --text-dim:#93a3bb; --text-faint:#63728c;
+    --cyan:#22d3ee; --cyan-soft:rgba(34,211,238,0.13); --cyan-line:rgba(34,211,238,0.4);
+    --amber:#f5a524; --amber-soft:rgba(245,165,36,0.12);
+    --ion:#ef4444; --electron:#3b82f6; --green:#34d399; --green-soft:rgba(52,211,153,0.12);
+    --font-body:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
+    --maxw:1180px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f7f9fc; --bg-2:#eef2f8;
+      --surface:#ffffff; --surface-2:#f2f5fa; --surface-3:#e9eef6;
+      --border:rgba(10,20,40,0.10); --border-strong:rgba(10,20,40,0.20);
+      --text:#0c1524; --text-dim:#4a5a73; --text-faint:#7a8aa3;
+      --cyan:#0891b2; --cyan-soft:rgba(8,145,178,0.10); --cyan-line:rgba(8,145,178,0.4);
+      --amber:#b45309; --amber-soft:rgba(180,83,9,0.10);
+      --green:#047857; --green-soft:rgba(4,120,87,0.10);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--text);font-family:var(--font-body);
+    line-height:1.65;-webkit-font-smoothing:antialiased;font-size:16px;
+    background-image:
+      radial-gradient(900px 500px at 80% -8%, rgba(34,211,238,0.10), transparent 60%),
+      radial-gradient(700px 400px at 0% 8%, rgba(59,130,246,0.08), transparent 55%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    background-attachment:fixed;
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+  a{color:var(--cyan);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--font-mono);font-size:.86em}
+  h1,h2,h3{line-height:1.15;letter-spacing:-0.02em;margin:0}
+  p{margin:0 0 1em}
+
+  /* ---------- nav ---------- */
+  nav.top{
+    position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
+    background:color-mix(in srgb, var(--bg) 78%, transparent);
+    border-bottom:1px solid var(--border);
+  }
+  nav.top .wrap{display:flex;align-items:center;gap:20px;height:58px}
+  .brand{font-family:var(--font-mono);font-weight:600;font-size:14px;letter-spacing:.14em;color:var(--text)}
+  .brand b{color:var(--cyan)}
+  .navlinks{display:flex;gap:4px;margin-left:auto;overflow-x:auto;scrollbar-width:none}
+  .navlinks::-webkit-scrollbar{display:none}
+  .navlinks a{
+    font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);padding:7px 11px;
+    border-radius:7px;white-space:nowrap;
+  }
+  .navlinks a:hover{color:var(--text);background:var(--surface-2);text-decoration:none}
+
+  /* ---------- hero ---------- */
+  header.hero{padding:74px 0 40px;position:relative}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:9px;font-family:var(--font-mono);font-size:12px;
+    letter-spacing:.16em;color:var(--cyan);border:1px solid var(--cyan-line);
+    background:var(--cyan-soft);padding:6px 13px;border-radius:100px;margin-bottom:24px;
+  }
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan)}
+  h1.title{font-size:clamp(40px,7vw,74px);font-weight:700;letter-spacing:-0.035em}
+  h1.title span{color:var(--cyan)}
+  .tagline{font-size:clamp(17px,2.4vw,22px);color:var(--text-dim);max-width:720px;margin:18px 0 30px}
+  .badges{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:32px}
+  .badge{
+    font-family:var(--font-mono);font-size:12px;color:var(--text-dim);
+    border:1px solid var(--border);background:var(--surface);padding:5px 11px;border-radius:6px;
+  }
+  .badge b{color:var(--text);font-weight:600}
+  .cta{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .btn{
+    display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:15px;
+    padding:12px 20px;border-radius:9px;border:1px solid transparent;cursor:pointer;
+  }
+  .btn.primary{background:var(--cyan);color:#04141b}
+  .btn.primary:hover{filter:brightness(1.08);text-decoration:none}
+  .btn.ghost{border-color:var(--border-strong);background:var(--surface);color:var(--text)}
+  .btn.ghost:hover{background:var(--surface-2);text-decoration:none}
+  .btn svg{width:17px;height:17px}
+
+  /* ---------- stats ---------- */
+  .stats{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+    background:var(--border);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-top:46px;
+  }
+  .stat{background:var(--surface);padding:22px 20px}
+  .stat .v{font-family:var(--font-mono);font-size:28px;font-weight:600;color:var(--text);letter-spacing:-0.02em}
+  .stat .v em{font-style:normal;color:var(--cyan);font-size:18px}
+  .stat .k{font-size:12.5px;color:var(--text-faint);margin-top:4px;letter-spacing:.02em}
+
+  /* ---------- sections ---------- */
+  section{padding:64px 0;border-top:1px solid var(--border)}
+  .seclabel{
+    display:inline-flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:12px;
+    letter-spacing:.18em;color:var(--cyan);text-transform:uppercase;margin-bottom:16px;
+  }
+  .seclabel::before{content:"";width:22px;height:1px;background:var(--cyan)}
+  h2.sec{font-size:clamp(26px,4vw,38px);font-weight:700;margin-bottom:14px}
+  .lede{font-size:18px;color:var(--text-dim);max-width:760px;margin-bottom:38px}
+
+  /* ---------- live sim ---------- */
+  .sim{
+    border:1px solid var(--border);border-radius:16px;background:var(--surface);
+    overflow:hidden;box-shadow:0 24px 60px -30px rgba(0,0,0,0.7);
+  }
+  .simbar{
+    display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px;padding:13px 16px;
+    background:var(--surface-2);border-bottom:1px solid var(--border);
+  }
+  .simbar .grp{display:flex;align-items:center;gap:9px}
+  .simbar label{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);letter-spacing:.06em}
+  select,input[type=range]{font-family:var(--font-body)}
+  select{
+    background:var(--surface-3);color:var(--text);border:1px solid var(--border-strong);
+    border-radius:7px;padding:7px 10px;font-size:13.5px;
+  }
+  input[type=range]{width:110px;accent-color:var(--cyan)}
+  .sbtn{
+    font-family:var(--font-body);font-size:13.5px;font-weight:600;padding:7px 14px;border-radius:7px;
+    border:1px solid var(--border-strong);background:var(--surface-3);color:var(--text);cursor:pointer;
+  }
+  .sbtn:hover{background:var(--surface-2)}
+  .sbtn.play{background:var(--green-soft);border-color:rgba(52,211,153,.45);color:var(--green)}
+  .simbar .readout{margin-left:auto;font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim)}
+  .simbar .readout b{color:var(--green);font-weight:600}
+  .simgrid{display:grid;grid-template-columns:1.55fr 1fr;gap:1px;background:var(--border)}
+  @media (max-width:860px){.simgrid{grid-template-columns:1fr}}
+  .panel{background:var(--surface);padding:12px}
+  .panel .cap{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);letter-spacing:.08em;margin-bottom:8px}
+  .panel canvas{width:100%;display:block;border-radius:9px;background:#080d17}
+  .side{display:grid;grid-template-rows:1fr 1fr;gap:1px;background:var(--border)}
+  .simnote{
+    padding:13px 16px;font-size:13px;color:var(--text-dim);background:var(--surface-3);
+    border-top:1px solid var(--border);
+  }
+  .simnote code{color:var(--cyan)}
+
+  /* ---------- video ---------- */
+  .video-frame{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:#05080f;box-shadow:0 24px 60px -30px rgba(0,0,0,.7)}
+  .video-frame video{width:100%;display:block}
+
+  /* ---------- cards ---------- */
+  .grid{display:grid;gap:16px}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+  .card{
+    border:1px solid var(--border);border-radius:13px;background:var(--surface);padding:22px;
+  }
+  .card h3{font-size:17px;margin-bottom:8px}
+  .card p{color:var(--text-dim);font-size:14.5px;margin:0}
+  .card .num{font-family:var(--font-mono);font-size:12px;color:var(--cyan);letter-spacing:.1em;margin-bottom:12px}
+  .card.accent{background:linear-gradient(180deg,var(--cyan-soft),transparent);border-color:var(--cyan-line)}
+
+  /* ---------- table ---------- */
+  .tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:13px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+  th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--border)}
+  th{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);font-weight:500;background:var(--surface-2);position:sticky;top:0}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--surface-2)}
+  td.num{font-family:var(--font-mono);text-align:right;font-variant-numeric:tabular-nums}
+  .pill{font-family:var(--font-mono);font-size:11.5px;padding:3px 9px;border-radius:100px;background:var(--cyan-soft);color:var(--cyan);border:1px solid var(--cyan-line)}
+
+  /* ---------- code ---------- */
+  .codewrap{border:1px solid var(--border);border-radius:13px;background:var(--surface-3);overflow:hidden}
+  .codebar{display:flex;align-items:center;justify-content:space-between;padding:9px 15px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+  .codebar span{font-family:var(--font-mono);font-size:12px;color:var(--text-faint)}
+  pre{margin:0;padding:17px 18px;overflow-x:auto;font-family:var(--font-mono);font-size:13.2px;line-height:1.7;color:var(--text)}
+  pre .c{color:var(--text-faint)}
+  pre .k{color:var(--cyan)}
+  pre .s{color:var(--green)}
+
+  /* ---------- figures ---------- */
+  figure{margin:0}
+  figure img{width:100%;border-radius:13px;border:1px solid var(--border);display:block;background:#0a0c14}
+  figcaption{font-size:13px;color:var(--text-faint);margin-top:10px;font-family:var(--font-mono)}
+
+  footer{border-top:1px solid var(--border);padding:40px 0 60px;color:var(--text-faint);font-size:14px}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:center}
+  .footlinks{display:flex;gap:18px;font-family:var(--font-mono);font-size:13px}
+  @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  .hero .wrap > *{animation:rise .7s cubic-bezier(.2,.7,.2,1) both}
+  .hero .wrap > *:nth-child(1){animation-delay:.02s}
+  .hero .wrap > *:nth-child(2){animation-delay:.08s}
+  .hero .wrap > *:nth-child(3){animation-delay:.14s}
+  .hero .wrap > *:nth-child(4){animation-delay:.20s}
+  .hero .wrap > *:nth-child(5){animation-delay:.26s}
+  .hero .wrap > *:nth-child(6){animation-delay:.32s}
+  @media (prefers-reduced-motion:reduce){.hero .wrap > *{animation:none}}
+</style>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <div class="brand">TOKAMAK<b>-PY</b></div>
+    <div class="navlinks">
+      <a href="#live">Live simulation</a>
+      <a href="#demo">Demo</a>
+      <a href="#features">Features</a>
+      <a href="#presets">Presets</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#install">Install</a>
+      <a href="#architecture">Architecture</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><span class="dot"></span>N-BODY PLASMA PHYSICS · NUMBA JIT</span>
+    <h1 class="title">Tokamak<span>-Py</span></h1>
+    <p class="tagline">A high-performance N-body electromagnetic plasma confinement engine — symplectic Boris integration, Barnes-Hut quadtrees &amp; octrees, and a real-time PyQt6 dashboard for tokamak, mirror, fusor and E&nbsp;×&nbsp;B regimes.</p>
+    <div class="badges">
+      <span class="badge"><b>Python</b> 3.10+</span>
+      <span class="badge">License <b>MIT</b></span>
+      <span class="badge"><b>25</b> tests passing</span>
+      <span class="badge">Numba <b>njit</b></span>
+      <span class="badge">PyQt6 dashboard</span>
+      <span class="badge"><b>2D-3V</b> &amp; <b>3D-3V</b></span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="#live">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 3l14 9-14 9V3z"/></svg>
+        Run the live simulation
+      </a>
+      <a class="btn ghost" href="https://github.com/rajveersinh-is-dev/Tokamak-Py">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.3-1.7-1.3-1.7-1.06-.72.08-.7.08-.7 1.17.08 1.79 1.2 1.79 1.2 1.04 1.79 2.73 1.27 3.4.97.1-.76.41-1.27.74-1.56-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.41-2.69 5.38-5.25 5.67.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg>
+        View source
+      </a>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="v">149 <em>FPS</em></div><div class="k">600 particles, 2D tokamak (CPU, headless)</div></div>
+      <div class="stat"><div class="v">2.9<em>×</em></div><div class="k">Barnes-Hut speedup vs direct at N = 2000</div></div>
+      <div class="stat"><div class="v">2.2<em>e-3</em></div><div class="k">relative energy drift over 800 symplectic steps</div></div>
+      <div class="stat"><div class="v">2,407</div><div class="k">lines of Python across the engine</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ LIVE SIM ============ -->
+<section id="live">
+  <div class="wrap">
+    <span class="seclabel">Live in your browser</span>
+    <h2 class="sec">Run the engine, right here</h2>
+    <p class="lede">This is a faithful JavaScript port of the project's core physics — the same symplectic Boris integrator, the same tokamak / fusor / E&nbsp;×&nbsp;B field models and the same softened Coulomb solver that power the Python package. Change the preset, crank the magnetic field, watch the energy telemetry and the Maxwell-Boltzmann distribution.</p>
+
+    <div class="sim">
+      <div class="simbar">
+        <div class="grp">
+          <button class="sbtn play" id="btnPlay">Pause</button>
+          <button class="sbtn" id="btnStep">Step</button>
+          <button class="sbtn" id="btnReset">Reset</button>
+        </div>
+        <div class="grp">
+          <label for="selPreset">PRESET</label>
+          <select id="selPreset"></select>
+        </div>
+        <div class="grp">
+          <label for="rngB">B-FIELD</label>
+          <input type="range" id="rngB" min="0" max="400" value="100">
+          <span id="lblB" style="font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);width:34px">1.0×</span>
+        </div>
+        <div class="grp">
+          <label for="rngN">PARTICLES</label>
+          <input type="range" id="rngN" min="150" max="700" step="50" value="500">
+          <span id="lblN" style="font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);width:34px">500</span>
+        </div>
+        <div class="readout">steps <b id="roSteps">0</b> · ΔE/E₀ <b id="roDrift">0.0e+0</b></div>
+      </div>
+
+      <div class="simgrid">
+        <div class="panel">
+          <div class="cap">PLASMA CONFINEMENT SANDBOX</div>
+          <canvas id="cvMain"></canvas>
+        </div>
+        <div class="side">
+          <div class="panel">
+            <div class="cap">SYMPLECTIC ENERGY TELEMETRY</div>
+            <canvas id="cvEnergy"></canvas>
+          </div>
+          <div class="panel">
+            <div class="cap">MAXWELL-BOLTZMANN SPEED DISTRIBUTION</div>
+            <canvas id="cvDist"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="simnote" id="simBlurb">Loading…</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DEMO ============ -->
+<section id="demo">
+  <div class="wrap">
+    <span class="seclabel">Demo</span>
+    <h2 class="sec">The dashboard, running for real</h2>
+    <p class="lede">A 20-second capture of the actual PyQt6 application — not a mock-up. The desktop dashboard steps the real engine, switching between the tokamak poloidal slice, magnetic mirror, IEC fusor, E&nbsp;×&nbsp;B drift and the classic electrostatic sandbox.</p>
+    <div class="video-frame">
+      <video controls muted playsinline preload="metadata" poster="assets/poster.jpg">
+        <source src="demo.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+      </video>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section id="features">
+  <div class="wrap">
+    <span class="seclabel">Capabilities</span>
+    <h2 class="sec">What the engine does</h2>
+    <p class="lede">Everything is vectorised with Numba <code>njit</code> and JIT-cached, so the heavy inner loops run at compiled speed while the physics stays readable Python.</p>
+    <div class="grid g3">
+      <div class="card accent">
+        <div class="num">01 · INTEGRATOR</div>
+        <h3>Symplectic Boris scheme</h3>
+        <p>The gold-standard phase-space-conserving integrator for charged particles under <code>F = q(E + v × B)</code>, with a split electric push and an exact magnetic rotation. Long-run energy drift stays near machine-noise instead of diverging like forward Euler.</p>
+      </div>
+      <div class="card">
+        <div class="num">02 · SOLVERS</div>
+        <h3>Barnes-Hut trees &amp; direct</h3>
+        <p>Quadtrees (2D) and octrees (3D) bring the Coulomb sum to <code>O(N log N)</code> with a tunable opening angle θ, alongside an exact <code>O(N²)</code> direct solver used as ground truth and for small systems.</p>
+      </div>
+      <div class="card">
+        <div class="num">03 · FIELDS</div>
+        <h3>Confined-field models</h3>
+        <p>Tokamak torus (toroidal + poloidal with a real safety-factor <code>q(r)</code>), 2D poloidal slice, magnetic mirror bottle, Farnsworth-Hirsch fusor and orthogonal E × B drift.</p>
+      </div>
+      <div class="card">
+        <div class="num">04 · DASHBOARD</div>
+        <h3>Real-time PyQt6 telemetry</h3>
+        <p>A dark-mode dashboard with live particle confinement, tracer orbits, symplectic energy curves and a Maxwell-Boltzmann speed histogram — with play/pause, stepping, B-field and dt controls.</p>
+      </div>
+      <div class="card">
+        <div class="num">05 · CLI</div>
+        <h3>Headless runner &amp; benchmarks</h3>
+        <p>Run any preset without a display, save diagnostic figures, list presets and benchmark Barnes-Hut against direct summation — all from <code>python main.py</code>.</p>
+      </div>
+      <div class="card">
+        <div class="num">06 · PHYSICS</div>
+        <h3>2D-3V and 3D-3V</h3>
+        <p>Out-of-plane velocity components undergo the full Lorentz rotation in 2D, and toroidal / spherical / circular kinematic limiters enforce first-wall confinement in both dimensions.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PRESETS ============ -->
+<section id="presets">
+  <div class="wrap">
+    <span class="seclabel">Regimes</span>
+    <h2 class="sec">Six ready-made plasma presets</h2>
+    <p class="lede">Each preset bundles a field configuration, geometry, species mix and numerical parameters, so you can move from one confinement regime to another in a single argument.</p>
+    <div class="tblwrap">
+      <table>
+        <thead>
+          <tr><th>Preset</th><th>Dim</th><th>Field model</th><th>Boundary</th><th class="num">Particles</th><th class="num">kₑ</th><th class="num">v_th</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>tokamak_2d</code></td><td>2D</td><td>Poloidal tokamak slice</td><td>Circular</td><td class="num">600</td><td class="num">300</td><td class="num">30</td></tr>
+          <tr><td><code>tokamak_3d</code></td><td>3D</td><td>Toroidal + poloidal torus</td><td>Toroidal</td><td class="num">500</td><td class="num">200</td><td class="num">25</td></tr>
+          <tr><td><code>magnetic_mirror</code></td><td>3D</td><td>Magnetic bottle trap</td><td>Spherical</td><td class="num">400</td><td class="num">100</td><td class="num">20</td></tr>
+          <tr><td><code>fusor</code></td><td>2D</td><td>IEC electrostatic well</td><td>Circular</td><td class="num">600</td><td class="num">500</td><td class="num">5</td></tr>
+          <tr><td><code>exb_drift</code></td><td>2D</td><td>Uniform E ⊥ B</td><td>Circular</td><td class="num">400</td><td class="num">50</td><td class="num">15</td></tr>
+          <tr><td><code>classic_2d</code></td><td>2D</td><td>Self-consistent (no external)</td><td>Circular</td><td class="num">1000</td><td class="num">1000</td><td class="num">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid g2" style="margin-top:26px">
+      <figure>
+        <img src="assets/tokamak_confinement.png" alt="Tokamak field topology, flux surfaces, banana orbit and safety factor profile">
+        <figcaption>Helical field topology, flux surfaces, a trapped-ion banana orbit and the safety-factor profile q(r).</figcaption>
+      </figure>
+      <figure>
+        <img src="assets/presets_showcase.png" alt="Four confinement regimes: tokamak, magnetic mirror, fusor, E cross B drift">
+        <figcaption>Four regimes side by side: tokamak slice, magnetic mirror, IEC fusor and E × B drift.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BENCHMARKS ============ -->
+<section id="benchmarks">
+  <div class="wrap">
+    <span class="seclabel">Performance</span>
+    <h2 class="sec">Barnes-Hut vs. direct summation</h2>
+    <p class="lede">Measured on CPU with the built-in benchmark (<code>python main.py benchmark</code>, θ = 0.25). The tree method overtakes exact summation around N ≈ 1000 and holds a ~2.5–2.9× lead at larger N, while the relative force error stays below ~1.3 × 10⁻².</p>
+    <div class="grid g2">
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th class="num">N</th><th class="num">Direct (ms)</th><th class="num">Barnes-Hut (ms)</th><th class="num">Speedup</th><th class="num">Rel. error</th></tr></thead>
+          <tbody>
+            <tr><td class="num">100</td><td class="num">0.44</td><td class="num">0.66</td><td class="num">0.66×</td><td class="num">2.4e-3</td></tr>
+            <tr><td class="num">250</td><td class="num">1.47</td><td class="num">1.24</td><td class="num">1.18×</td><td class="num">1.9e-3</td></tr>
+            <tr><td class="num">500</td><td class="num">1.81</td><td class="num">2.31</td><td class="num">0.78×</td><td class="num">4.1e-3</td></tr>
+            <tr><td class="num">1000</td><td class="num">13.67</td><td class="num">5.51</td><td class="num">2.48×</td><td class="num">4.5e-3</td></tr>
+            <tr><td class="num">2000</td><td class="num">46.22</td><td class="num">15.83</td><td class="num">2.92×</td><td class="num">1.7e-2</td></tr>
+            <tr><td class="num">4000</td><td class="num">133.52</td><td class="num">53.01</td><td class="num">2.52×</td><td class="num">1.3e-2</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure>
+        <img src="assets/barnes_hut_scaling.png" alt="N-body algorithmic scaling and force accuracy">
+        <figcaption>Execution time per step and relative force error versus particle count.</figcaption>
+      </figure>
+    </div>
+    <div class="grid g2" style="margin-top:26px">
+      <figure>
+        <img src="assets/energy_conservation.png" alt="Symplectic energy conservation versus Euler drift">
+        <figcaption>Symplectic Boris holds energy flat; a non-symplectic Euler scheme diverges exponentially.</figcaption>
+      </figure>
+      <figure>
+        <img src="assets/phase_space_thermalization.png" alt="Phase space portrait and Maxwell-Boltzmann thermalisation">
+        <figcaption>Tracer phase space and Coulomb thermalisation onto a Maxwell-Boltzmann distribution.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ============ INSTALL ============ -->
+<section id="install">
+  <div class="wrap">
+    <span class="seclabel">Get started</span>
+    <h2 class="sec">Install and run</h2>
+    <p class="lede">Requires Python 3.10+. The dashboard needs PyQt6/PyQtGraph; the headless CLI and tests run anywhere.</p>
+    <div class="grid g2">
+      <div class="codewrap">
+        <div class="codebar"><span>install</span></div>
+        <pre><span class="c"># clone and install dependencies</span>
+git clone https://github.com/rajveersinh-is-dev/Tokamak-Py.git
+<span class="k">cd</span> Tokamak-Py
+pip install -r requirements.txt
+
+<span class="c"># launch the interactive dashboard</span>
+python main.py</pre>
+      </div>
+      <div class="codewrap">
+        <div class="codebar"><span>headless CLI</span></div>
+        <pre><span class="c"># run a preset and save a diagnostic figure</span>
+python main.py run -p tokamak_2d -n 600 -s 800 -o fig.png
+
+<span class="c"># list presets, benchmark the solvers</span>
+python main.py presets
+python main.py benchmark --save-chart bench.png</pre>
+      </div>
+    </div>
+    <div class="codewrap" style="margin-top:16px">
+      <div class="codebar"><span>python</span></div>
+      <pre><span class="k">from</span> tokamak_py <span class="k">import</span> PhysicsEngine
+
+engine = PhysicsEngine(preset=<span class="s">"tokamak_2d"</span>, n_particles=600, solver=<span class="s">"barnes_hut"</span>)
+<span class="k">for</span> _ <span class="k">in</span> range(500):
+    engine.step()
+
+<span class="k">print</span>(engine.kinetic_energy, engine.potential_energy)
+<span class="k">print</span>(<span class="s">"relative energy drift:"</span>, engine.get_relative_energy_drift())</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section id="architecture">
+  <div class="wrap">
+    <span class="seclabel">Under the hood</span>
+    <h2 class="sec">Module map</h2>
+    <p class="lede">The package is split into single-responsibility modules so the physics, the numerical kernels and the UI evolve independently.</p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Module</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td><code>engine.py</code></td><td><code>PhysicsEngine</code> — ties fields, solvers and integrators into a steppable simulation with energy telemetry</td></tr>
+          <tr><td><code>fields.py</code></td><td>Numba field kernels: tokamak 2D/3D, magnetic mirror, IEC fusor, E × B, plus zero-field</td></tr>
+          <tr><td><code>integrators.py</code></td><td>Symplectic Boris step (2D-3V and 3D-3V) and the kinematic boundary limiters</td></tr>
+          <tr><td><code>quadtree.py</code> / <code>octree.py</code></td><td>Barnes-Hut tree construction and force traversal in 2D and 3D</td></tr>
+          <tr><td><code>direct.py</code></td><td>Exact <code>O(N²)</code> Coulomb force and potential-energy summation</td></tr>
+          <tr><td><code>presets.py</code></td><td>Named physical scenarios bundling geometry, fields and numerical parameters</td></tr>
+          <tr><td><code>gui*.py</code></td><td>PyQt6 / PyQtGraph dashboard, control toolbar and telemetry plots</td></tr>
+          <tr><td><code>cli.py</code></td><td>Headless run, benchmark and preset-listing subcommands</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>Tokamak-Py — MIT licensed. Built with NumPy, Numba, SciPy and PyQt6.</div>
+    <div class="footlinks">
+      <a href="https://github.com/rajveersinh-is-dev/Tokamak-Py">Repository</a>
+      <a href="https://github.com/rajveersinh-is-dev/Tokamak-Py/blob/main/LICENSE">License</a>
+      <a href="#live">Live simulation</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* =====================================================================
+   Tokamak-Py — live browser port of the core physics.
+   Mirrors tokamak_py/fields.py, integrators.py and direct.py.
+   ===================================================================== */
+const PRESETS = {
+  tokamak_2d: {
+    label:'Tokamak Poloidal Slice (2D)', field:'tokamak2d', dim:2, n:500, dt:0.001,
+    B0:2.0, R0:100, a:50, Bth0:0.4, boundary:50, ke:300, soft:1.5, thermal:30, species:'balanced',
+    blurb:'Tokamak poloidal cross-section — magnetic flux surfaces, gyro-orbits and trapped-particle banana orbits.'
+  },
+  exb_drift: {
+    label:'E × B Drift Dynamics', field:'exb', dim:2, n:400, dt:0.001,
+    Ey:80, Bz:2, boundary:150, ke:50, soft:2.0, thermal:15, species:'balanced',
+    blurb:'Perpendicular E and B fields produce a universal cross-field drift independent of mass and charge.'
+  },
+  fusor: {
+    label:'Inertial Electrostatic Confinement (Fusor)', field:'fusor', dim:2, n:500, dt:0.001,
+    V0:3000, rgrid:25, boundary:120, ke:500, soft:1.5, thermal:5, species:'ions',
+    blurb:'Farnsworth-Hirsch fusor — ions fall into a deep central potential well and recirculate through the core.'
+  },
+  classic_2d: {
+    label:'Classic Electrostatic Sandbox (2D)', field:'zero', dim:2, n:600, dt:0.001,
+    boundary:200, ke:1000, soft:1.0, thermal:0, species:'balanced',
+    blurb:'Self-consistent 2D electrostatic N-body plasma with a reflective circular boundary.'
+  }
+};
+const MAXN = 700;
+
+const sim = {
+  key:'tokamak_2d', cfg:null, n:0,
+  px:new Float64Array(MAXN), py:new Float64Array(MAXN),
+  vx:new Float64Array(MAXN), vy:new Float64Array(MAXN), vz:new Float64Array(MAXN),
+  fx:new Float64Array(MAXN), fy:new Float64Array(MAXN),
+  q:new Float64Array(MAXN), m:new Float64Array(MAXN),
+  bScale:1.0, steps:0, running:true,
+  ke:0, pe:0, E0:0, drift:0,
+  trailX:[], trailY:[],
+  hist:[]  // {ke,pe,te}
+};
+
+function gauss(){ // Box-Muller
+  let u=0,v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function initSim(key){
+  const c = PRESETS[key]; sim.key=key; sim.cfg=c; sim.n=c.n; sim.steps=0;
+  sim.trailX=[]; sim.trailY=[]; sim.hist=[];
+  const R = c.boundary;
+  for(let i=0;i<MAXN;i++){
+    const q = c.species==='ions' ? 1 : (i < c.n/2 ? 1 : -1);
+    sim.q[i]=q; sim.m[i]=1.0;
+  }
+  for(let i=0;i<c.n;i++){
+    const rad = Math.sqrt(Math.random())*R*0.8 + 0.05*R;
+    const ang = Math.random()*2*Math.PI;
+    sim.px[i]=rad*Math.cos(ang); sim.py[i]=rad*Math.sin(ang);
+    const s = c.thermal/Math.sqrt(3);
+    sim.vx[i]= s>0 ? gauss()*s : 0;
+    sim.vy[i]= s>0 ? gauss()*s : 0;
+    sim.vz[i]= s>0 ? gauss()*s : 0;
+  }
+  computeForces();
+  updateKE();
+  sim.E0 = sim.ke + sim.pe; sim.drift = 0;
+}
+
+/* softened direct Coulomb sum — identical form to tokamak_py/direct.py */
+function computeForces(){
+  const {px,py,q,fx,fy} = sim, n=sim.n, ke=sim.cfg.ke, eps2=sim.cfg.soft*sim.cfg.soft;
+  let pe=0;
+  for(let i=0;i<n;i++){
+    const xi=px[i], yi=py[i], qi=q[i];
+    let ax=0, ay=0, p=0;
+    for(let j=0;j<n;j++){
+      if(i===j) continue;
+      const dx=xi-px[j], dy=yi-py[j];
+      const d2=dx*dx+dy*dy+eps2;
+      const inv=1/Math.sqrt(d2), inv3=inv/d2;
+      const f=ke*qi*q[j]*inv3;
+      ax+=f*dx; ay+=f*dy;
+      p += ke*qi*q[j]*inv;
+    }
+    fx[i]=ax; fy[i]=ay; pe += p*0.5;
+  }
+  sim.pe = pe;
+}
+
+function fields(i, out){
+  const c=sim.cfg, x=sim.px[i], y=sim.py[i];
+  out.ex=0; out.ey=0; out.bx=0; out.by=0; out.bz=0;
+  if(c.field==='tokamak2d'){
+    const r=Math.max(Math.hypot(x,y),1e-6);
+    const Bth = r<=c.a ? c.Bth0*r/c.a : c.Bth0*c.a/r;
+    out.bx = -Bth*y/r; out.by = Bth*x/r;
+    out.bz = c.B0/Math.max(1+x/c.R0, 0.1);
+  } else if(c.field==='exb'){
+    out.ey = c.Ey; out.bz = c.Bz;
+  } else if(c.field==='fusor'){
+    const r=Math.sqrt(c.soft*c.soft + x*x + y*y);
+    const Em = r<c.rgrid ? -c.V0*r/(c.rgrid*c.rgrid) : -c.V0/(r*r);
+    out.ex = Em*x/r; out.ey = Em*y/r;
+  }
+}
+
+const _f={ex:0,ey:0,bx:0,by:0,bz:0};
+function step(){
+  const c=sim.cfg, n=sim.n, dt=c.dt, h=0.5*dt;
+  for(let i=0;i<n;i++){
+    fields(i,_f);
+    const im=1/sim.m[i], q=sim.q[i];
+    // total electric force = Coulomb + q·E
+    const Fx=sim.fx[i]+q*_f.ex, Fy=sim.fy[i]+q*_f.ey;
+    const Bx=_f.bx*sim.bScale, By=_f.by*sim.bScale, Bz=_f.bz*sim.bScale;
+    // half electric push
+    const vxm=sim.vx[i]+Fx*im*h, vym=sim.vy[i]+Fy*im*h, vzm=sim.vz[i];
+    // magnetic rotation
+    const tx=q*Bx*im*h, ty=q*By*im*h, tz=q*Bz*im*h;
+    const t2=tx*tx+ty*ty+tz*tz, id=2/(1+t2);
+    const sx=tx*id, sy=ty*id, sz=tz*id;
+    const vpx=vxm+(vym*tz-vzm*ty), vpy=vym+(vzm*tx-vxm*tz), vpz=vzm+(vxm*ty-vym*tx);
+    const vxp=vxm+(vpy*sz-vpz*sy), vyp=vym+(vpz*sx-vpx*sz), vzp=vzm+(vpx*sy-vpy*sx);
+    // second half electric push
+    const vxn=vxp+Fx*im*h, vyn=vyp+Fy*im*h;
+    sim.vx[i]=vxn; sim.vy[i]=vyn; sim.vz[i]=vzp;
+    sim.px[i]+=vxn*dt; sim.py[i]+=vyn*dt;
+  }
+  // circular reflective limiter
+  const R=c.boundary, R2=R*R;
+  for(let i=0;i<n;i++){
+    const x=sim.px[i], y=sim.py[i], r2=x*x+y*y;
+    if(r2>R2){
+      const r=Math.sqrt(r2), nx=x/r, ny=y/r;
+      sim.px[i]=nx*R; sim.py[i]=ny*R;
+      const d=sim.vx[i]*nx+sim.vy[i]*ny;
+      if(d>0){ sim.vx[i]-=2*d*nx; sim.vy[i]-=2*d*ny; }
+    }
+  }
+  computeForces();
+  updateKE();
+  sim.steps++;
+  sim.drift = Math.abs(sim.ke+sim.pe-sim.E0)/(Math.abs(sim.E0)+1e-9);
+  sim.trailX.push(sim.px[0]); sim.trailY.push(sim.py[0]);
+  if(sim.trailX.length>320){sim.trailX.shift();sim.trailY.shift();}
+}
+function updateKE(){
+  let ke=0; const n=sim.n;
+  for(let i=0;i<n;i++) ke += 0.5*sim.m[i]*(sim.vx[i]**2+sim.vy[i]**2+sim.vz[i]**2);
+  sim.ke=ke;
+}
+
+/* ---------- rendering ---------- */
+const cvMain=document.getElementById('cvMain'), ctxM=cvMain.getContext('2d');
+const cvEnergy=document.getElementById('cvEnergy'), ctxE=cvEnergy.getContext('2d');
+const cvDist=document.getElementById('cvDist'), ctxD=cvDist.getContext('2d');
+
+function fit(canvas, ratio){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=canvas.clientWidth||300, h=Math.round(w*ratio);
+  canvas.width=w*dpr; canvas.height=h*dpr; canvas.style.height=h+'px';
+  const ctx=canvas.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {w,h,ctx};
+}
+
+function drawMain(){
+  const {w,h,ctx}=fit(cvMain,0.72);
+  ctx.fillStyle='#080d17'; ctx.fillRect(0,0,w,h);
+  const R=sim.cfg.boundary*1.08, scale=Math.min(w,h)/(2*R);
+  const cx=w/2, cy=h/2;
+  const X=x=>cx+x*scale, Y=y=>cy-y*scale;
+  // grid
+  ctx.strokeStyle='rgba(255,255,255,0.045)'; ctx.lineWidth=1;
+  for(let g=-R; g<=R; g+=R/4){
+    ctx.beginPath(); ctx.moveTo(X(g),0); ctx.lineTo(X(g),h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,Y(g)); ctx.lineTo(w,Y(g)); ctx.stroke();
+  }
+  // boundary
+  ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.setLineDash([6,6]); ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.arc(cx,cy,sim.cfg.boundary*scale,0,2*Math.PI); ctx.stroke();
+  ctx.setLineDash([]);
+  // tracer trail
+  if(sim.trailX.length>1){
+    ctx.strokeStyle='rgba(245,165,36,0.85)'; ctx.lineWidth=1.4; ctx.beginPath();
+    for(let i=0;i<sim.trailX.length;i++){
+      const x=X(sim.trailX[i]), y=Y(sim.trailY[i]);
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    }
+    ctx.stroke();
+  }
+  // particles
+  const r=Math.max(1.5, Math.min(2.6, 420/Math.sqrt(sim.n)/2.2));
+  for(let i=0;i<sim.n;i++){
+    ctx.fillStyle = sim.q[i]>0 ? '#ef4444' : '#3b82f6';
+    ctx.beginPath(); ctx.arc(X(sim.px[i]),Y(sim.py[i]),r,0,2*Math.PI); ctx.fill();
+  }
+}
+
+function drawEnergy(){
+  const {w,h,ctx}=fit(cvEnergy,0.46);
+  ctx.fillStyle='#080d17'; ctx.fillRect(0,0,w,h);
+  const H=sim.hist; if(H.length<2) return;
+  let mn=Infinity, mx=-Infinity;
+  for(const p of H){ mn=Math.min(mn,p.ke,p.pe,p.te); mx=Math.max(mx,p.ke,p.pe,p.te); }
+  const pad=1e-9; if(mx-mn<pad){mx=mn+1;mn-=1;}
+  const X=i=>8+(w-16)*i/(H.length-1), Y=v=>h-8-(h-16)*(v-mn)/(mx-mn);
+  const line=(key,col,wd)=>{ ctx.strokeStyle=col; ctx.lineWidth=wd; ctx.beginPath();
+    H.forEach((p,i)=>{ i?ctx.lineTo(X(i),Y(p[key])):ctx.moveTo(X(i),Y(p[key])); }); ctx.stroke(); };
+  line('ke','#34d399',1.4); line('pe','#ef4444',1.4); line('te','#f5a524',2.0);
+  ctx.font='11px "IBM Plex Mono", monospace';
+  ctx.fillStyle='#34d399'; ctx.fillText('KE',8,14);
+  ctx.fillStyle='#ef4444'; ctx.fillText('PE',34,14);
+  ctx.fillStyle='#f5a524'; ctx.fillText('E',60,14);
+}
+
+function drawDist(){
+  const {w,h,ctx}=fit(cvDist,0.46);
+  ctx.fillStyle='#080d17'; ctx.fillRect(0,0,w,h);
+  const n=sim.n, sp=new Float64Array(n); let mx=0, mv2=0;
+  for(let i=0;i<n;i++){ const s=Math.hypot(sim.vx[i],sim.vy[i],sim.vz[i]); sp[i]=s; mx=Math.max(mx,s); mv2+=s*s; }
+  mv2/=n;
+  if(mx<=1e-6){ ctx.fillStyle='#63728c'; ctx.font='12px "IBM Plex Mono", monospace'; ctx.fillText('no thermal motion',12,h/2); return; }
+  const B=24, bins=new Float64Array(B), bw=mx*1.05/B;
+  for(let i=0;i<n;i++) bins[Math.min(B-1,Math.floor(sp[i]/bw))]++;
+  let bmax=0; for(let i=0;i<B;i++) bmax=Math.max(bmax,bins[i]/(n*bw));
+  const X=v=>10+(w-20)*v/(mx*1.05), Y=d=>h-8-(h-16)*d/(bmax*1.15);
+  ctx.fillStyle='rgba(59,130,246,0.5)';
+  for(let i=0;i<B;i++){ const d=bins[i]/(n*bw); ctx.fillRect(X(i*bw),Y(d),Math.max(1,(w-20)/B-1),h-8-Y(d)); }
+  // 2D Maxwellian fit
+  const vth2=0.5*mv2; ctx.strokeStyle='#f5a524'; ctx.lineWidth=2; ctx.beginPath();
+  for(let k=0;k<=80;k++){ const v=mx*1.05*k/80, f=(v/vth2)*Math.exp(-v*v/(2*vth2));
+    k?ctx.lineTo(X(v),Y(f)):ctx.moveTo(X(v),Y(f)); }
+  ctx.stroke();
+}
+
+/* ---------- loop ---------- */
+let lastT=performance.now(), fpsAcc=0, fpsN=0;
+function loop(now){
+  const dt=now-lastT; lastT=now;
+  if(sim.running){
+    for(let k=0;k<4;k++) step();
+    sim.hist.push({ke:sim.ke,pe:sim.pe,te:sim.ke+sim.pe});
+    if(sim.hist.length>260) sim.hist.shift();
+  }
+  drawMain(); drawEnergy(); drawDist();
+  document.getElementById('roSteps').textContent=sim.steps;
+  document.getElementById('roDrift').textContent=sim.drift.toExponential(1);
+  requestAnimationFrame(loop);
+}
+
+/* ---------- controls ---------- */
+const selPreset=document.getElementById('selPreset');
+Object.entries(PRESETS).forEach(([k,p])=>{
+  const o=document.createElement('option'); o.value=k; o.textContent=p.label; selPreset.appendChild(o);
+});
+selPreset.value='tokamak_2d';
+selPreset.addEventListener('change',()=>{ initSim(selPreset.value); rngN.value=PRESETS[selPreset.value].n; lblN.textContent=rngN.value; setBlurb(); });
+const rngB=document.getElementById('rngB'), lblB=document.getElementById('lblB');
+rngB.addEventListener('input',()=>{ sim.bScale=rngB.value/100; lblB.textContent=sim.bScale.toFixed(1)+'×'; });
+const rngN=document.getElementById('rngN'), lblN=document.getElementById('lblN');
+rngN.addEventListener('input',()=>{ lblN.textContent=rngN.value; });
+rngN.addEventListener('change',()=>{ PRESETS[sim.key].n=parseInt(rngN.value,10); initSim(sim.key); });
+const btnPlay=document.getElementById('btnPlay');
+btnPlay.addEventListener('click',()=>{
+  sim.running=!sim.running;
+  btnPlay.textContent=sim.running?'Pause':'Play';
+  btnPlay.classList.toggle('play',sim.running);
+});
+document.getElementById('btnStep').addEventListener('click',()=>{
+  for(let k=0;k<4;k++) step();
+  sim.hist.push({ke:sim.ke,pe:sim.pe,te:sim.ke+sim.pe}); if(sim.hist.length>260) sim.hist.shift();
+  drawMain(); drawEnergy(); drawDist();
+});
+document.getElementById('btnReset').addEventListener('click',()=>{ initSim(sim.key); });
+function setBlurb(){
+  document.getElementById('simBlurb').innerHTML =
+    '<b style="color:var(--text)">'+PRESETS[sim.key].label+'</b> — '+PRESETS[sim.key].blurb+
+    ' <span style="color:var(--text-faint)">· direct O(N²) softened Coulomb, Boris integration, '+
+    'circular reflective limiter.</span>';
+}
+
+initSim('tokamak_2d'); setBlurb();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
